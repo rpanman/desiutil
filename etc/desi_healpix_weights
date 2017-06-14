@@ -1,0 +1,71 @@
+#!/usr/bin/env python
+
+"""DESI will target roughly 1 object per square arcmin, so use ~50 sources per
+square arcmin.
+
+"""
+import os
+import numpy as np
+import argparse
+import desimodel.io
+
+import healpy as hp
+
+from astropy.table import Table, Column
+
+from desimodel.footprint import radec2pix, tiles2pix
+from desispec.io.util import fitsheader, write_bintable
+from desiutil.log import get_logger
+log = get_logger()
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(usage = "%(prog)s [options]")
+    parser.add_argument('-s', '--seed', type=int, default=None, help='Seed for random number generation')
+    parser.add_argument('--density', type=float, default=50, help='Target density of randoms (arcmin^2).')
+
+    args = parser.parse_args()
+
+    tiles = desimodel.io.load_tiles()
+
+    rand = np.random.RandomState(args.seed)
+
+    npts = 1000 # number of random points per healpix
+
+    weights = Table()
+
+    for nside in (32, 64):
+        npix = hp.nside2npix(nside)
+        areaperpix = hp.nside2pixarea(nside, degrees=True)
+
+        healpix = tiles2pix(nside, tiles=tiles)
+
+
+
+        healpix = np.arange(npix)
+
+        weights.add_column(Column(name='HEALPIX_32', data=healpix, dtype='i8'))
+
+        nrand = np.int(args.density * 3600 * areaperpix) # number of random targets per pixel
+
+        ra = rand.uniform(0, 360, nrand)
+        dec = rand.uniform(-90, 90, nrand)
+        pix = radec2pix(nside, ra, dec)
+        
+        import pdb ; pdb.set_trace()
+
+
+        weights.add_column(Column(name='WEIGHTS_32', data=weights, dtype='f4'))
+
+        is_point_in_desi(tiles, ra, dec)
+
+    
+
+
+    log.info('Reading mocks from {}'.format(args.indir))
+    data, filemap = read_lya(args.indir, nproc=args.nproc)
+
+    log.info('Writing {}'.format(args.output))
+    write_bintable(args.output, data, extname='METADATA', clobber=True)
+    header = dict(MOCKDIR = os.path.abspath(args.indir))
+    write_bintable(args.output, filemap, extname='FILEMAP', header=header)
